@@ -8,12 +8,31 @@ use serde::Deserialize;
 use surrealdb::{engine::remote::ws::Client, Surreal};
 use tokio::{fs::{read_dir, File}, io::AsyncReadExt};
 
-#[derive(Deserialize, PartialEq, Debug)]
+#[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Migration {
     filename: String,
     created_at: DateTime<Utc>,
 }
 
+#[derive(Debug)]
+pub enum Error {
+    IO(std::io::Error),
+    Surreal(surrealdb::Error),
+    ForbiddenUpdate(String),
+    ForbiddenRemoval(String),
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::IO(err)
+    }
+}
+
+impl From<surrealdb::Error> for Error {
+    fn from(err: surrealdb::Error) -> Self {
+        Error::Surreal(err)
+    }
+}
 
 impl PartialEq<String> for Migration {
     fn eq(&self, other: &String) -> bool {
@@ -21,9 +40,11 @@ impl PartialEq<String> for Migration {
     }
 }
 
-pub async fn migrate(db: &Surreal<Client>, migration_dir_path: &str) {
-    let _ = setup_migration_table(db).await.unwrap();
-    let _ = run_migration_files(db, migration_dir_path).await.unwrap();
+pub async fn migrate(db: &Surreal<Client>, migration_dir_path: &str) -> Result<(), Error> {
+    setup_migration_table(db).await?;
+    run_migration_files(db, migration_dir_path).await?;
+
+    Ok(())
 }
 
 async fn setup_migration_table(db: &Surreal<Client>) -> Result<(), surrealdb::Error> {
@@ -41,59 +62,84 @@ async fn setup_migration_table(db: &Surreal<Client>) -> Result<(), surrealdb::Er
     Ok(())
 }
 
-async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> Result<(), surrealdb::Error> {
+async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> Result<(), Error> {
     // Get the files already processed.
     let mut migrations = db
         .query("SELECT * FROM migrations ORDER BY created_at ASC;")
         .await?
         .check()?
         .take::<Vec<Migration>>(0)?;
+    let mut remaining_migrations: Vec<Migration> = migrations.clone();
 
     println!("Migrated files: {:#?}", migrations);
 
     // Get the surql migration files to execute.
-    let mut dir = read_dir(migration_dir_path).await.unwrap();
+    let mut dir = read_dir(migration_dir_path).await?;
     let mut entries: Vec<String> = vec![];
 
-    loop {
-        let entry = dir.next_entry().await;
-        match entry {
-            Ok(entry) => match entry {
-                Some(entry) => {
-                    let filename = entry.path().to_str().unwrap().to_string().replace((migration_dir_path.to_owned() + "/").as_str(), "");
-                    let pattern = r"^[0-9]+[a-zA-Z_]{0,}\.surql$";
-                    let regex = Regex::new(&pattern).unwrap();
-                    println!("{:?}", filename);
-                    if regex.is_match(&filename) {
-                        entries.push(filename);
-                    }
-                },
-                None => break
-            },
-            Err(e) => println!("An error occured while reading the file: {}", e),
+    // Filter the files that fit the migration pattern.
+    while let Some(dir_entry) = dir.next_entry().await? {
+        let filename = dir_entry.path().to_str().unwrap().to_string().replace((migration_dir_path.to_owned() + "/").as_str(), "");
+        let pattern = r"^[0-9]+[a-zA-Z_]{0,}\.surql$";
+        let regex = Regex::new(&pattern).expect("Failed to build the regexp");
+        if regex.is_match(&filename) {
+            entries.push(filename);
         }
     }
 
-    entries.sort();
+    // Sort the entries (by their number prefix).
+    entries.sort(); // TODO: Check how the strings are sorted.
 
     // Process migration files.
-    println!("{:?}", migrations);
-    println!("{:?}", entries);
+    println!("Migration files: {:#?}", entries);
 
+    let last_migration = migrations.last();
+
+    // Checker - check for forbidden updates and removals.
     for entry in entries {
+        // Get the file descriptor.
+        let mut file = File::open(migration_dir_path.to_owned() + "/" + &entry).await?;
+
+        // Check if the file has already been migrated.
         let migrated = migrations
             .iter()
-            .any(|migration| migration == &entry);
+            .any(|migration: &Migration| migration == &entry);
 
+        // If migrated, check that the last update date is anterior to the created_at.
         if migrated {
-            println!("[V] File already migrated: {}", entry);
-        } else {
-            let mut migration_content: String = String::new();
-            let result = File::open(migration_dir_path.to_owned() + "/" + &entry).await.unwrap().read_to_string(&mut migration_content).await;
-            if let Err(err) = result {
-                println!("An error occured while opening the migration file {}, ERROR: {}", entry, err);
+            let updated_at: DateTime<Utc> = File::metadata(&file)
+                .await?
+                .modified()?
+                .into();
+
+            // Ensure the file has not been updated after the last migration.
+            if updated_at > last_migration.unwrap().created_at {
+                println!("[X] Forbidden: The migration file '{}' has been updated after the last migration.", entry);
+                return Err(
+                    Error::ForbiddenUpdate(
+                        format!("Forbidden: The migration file '{}' has been updated after the last migration.", entry)
+                    )
+                );
             }
 
+            println!("[V] File already migrated: {}", entry);
+        } else {
+            // TODO: Check that the new migration file appears after the last migration file.
+            let mut migration_content: String = String::new();
+            file.read_to_string(&mut migration_content).await?;
+
+            // When the last migration file is created after the current file, it should fail.
+            if last_migration != None && last_migration.unwrap().created_at > DateTime::<Utc>::from(File::metadata(&file).await?.modified()?) {
+                println!("[X] The migration file '{}' appears before the last migration file '{}'.", entry, last_migration.unwrap().filename);
+
+                return Err(
+                    Error::ForbiddenUpdate(
+                        format!("The migration file '{}' appears before the last migration file '{}'.", entry, last_migration.unwrap().filename)
+                    )
+                );
+            }
+
+            // Migrate the file.
             let _ = db.query(migration_content).await?;
             let _ = db
                 .query("CREATE migrations SET filename=$filename;")
@@ -103,6 +149,21 @@ async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> 
 
             println!("[V] File successfuly migrated: {}", &entry);
         }
+
+        // Update the migrations list.
+        let position = remaining_migrations.iter().position(|migration| { *migration.filename == entry });
+        if let Some(pos) = position {
+            remaining_migrations.remove(pos);
+        }
+    }
+
+    if remaining_migrations.len() > 0 {
+        println!("[X] Some migration files are missing - migrations failed: {:?}", remaining_migrations);
+        return Err(
+            Error::ForbiddenRemoval(
+                format!("Some migration files are missing - migrations failed: {:?}", remaining_migrations)
+            )
+        )
     }
 
     Ok(())
@@ -155,19 +216,67 @@ mod tests {
         ").await.unwrap();
 
         // Act - Run the migration.
-        super::migrate(&db, migration_dir_path).await;
+        let result = super::migrate(&db, migration_dir_path).await;
+
+        // Assert
+        assert!(result.is_ok());
 
         // 2. When migration files are already processed, it should skip them.
         // Act - Run the migration again.
-        super::migrate(&db, migration_dir_path).await; 
+        let result = super::migrate(&db, migration_dir_path).await;
+
+        // Assert
+        assert!(result.is_ok());
+
+        // 3. When new migration files are added, it should process them.
+        // Arrange - Add a new migration file.
+        let mut file4 = File::create(migration_dir_path.to_owned() + "/004_create_likes_table.surql").await.unwrap();
+        file4.write_all(b"
+            DEFINE TABLE likes SCHEMAFULL;
+            DEFINE FIELD user_id ON TABLE likes TYPE record;
+            DEFINE FIELD post_id ON TABLE likes TYPE string;
+            DEFINE FIELD created_at ON TABLE likes TYPE datetime VALUE time::now();
+        ").await.unwrap();
+
+        // Act
+        let result = super::migrate(&db, migration_dir_path).await;
+
+        // Assert
+        assert!(result.is_ok());
+
+        // 4. When migration files are updated, it should fail.
+        // Arrange - Update the migration files.
+        file1.write(b"
+            DEFINE FIELD updated_at ON TABLE users TYPE datetime VALUE time::now();
+        ").await.unwrap();
+
+        // Act - Run the migration again.
+        let res = super::migrate(&db, migration_dir_path).await;
+
+        // Assert
+        assert!(res.is_err());
+
+        // 5. When a migrated file is removed, it should return an error.
+        // Arrange - Reset the migrations, migrate the files again and remove one file.
+        let _ = db.query("DELETE migrations;").await;
+        super::migrate(&db, migration_dir_path).await.expect("Failed to migrate the files.");
+        tokio::fs::remove_file(migration_dir_path.to_owned() + "/001_create_user_table.surql").await.unwrap();
+
+        // Act
+        let res = super::migrate(&db, migration_dir_path).await;
+
+        // Assert
+        assert!(res.is_err());
 
         // CLEANUP
         tokio::fs::remove_dir_all(migration_dir_path)
             .await
             .expect("Failed to remove directory for migration files.");
+        db.query("DELETE migrations;").await.unwrap();
         db.query("REMOVE TABLE migrations;").await.unwrap();
         db.query("REMOVE TABLE users;").await.unwrap();
         db.query("REMOVE TABLE posts;").await.unwrap();
         db.query("REMOVE TABLE comments;").await.unwrap();
+        db.query("REMOVE TABLE likes;").await.unwrap();
     }
 }

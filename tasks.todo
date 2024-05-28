@@ -1,4 +1,7 @@
-[] Forbid the update/removal of the migration files already migrated.
-[] Update 'created_at' field in Migration structure from String to Datetime (Chrono, ..).
+[V] Update 'created_at' field in Migration structure from String to Datetime (Chrono, ..).
+[V] Forbid the update/removal of the migration files already migrated.
+[] Add logging.
+[] Add tracing.
+[] Return a report about what have been done during the migration process (e.g: count of migrations, ..)
 [] Implement CLI using the library: first command - apply migrations.
 [] Add RESET command to CLI.
