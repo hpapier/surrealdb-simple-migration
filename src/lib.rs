@@ -1,6 +1,4 @@
-
-// use std::io::Read;
-
+use regex::Regex;
 use serde::Deserialize;
 
 use surrealdb::{engine::remote::ws::Client, Surreal};
@@ -55,9 +53,11 @@ async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> 
         match entry {
             Ok(entry) => match entry {
                 Some(entry) => {
-                    let filename = entry.path().to_str().unwrap().to_string();
-                    // TODO: Ensure the file has this pattern: <number>_<purpose>.surql
-                    if filename.contains(".surql") {
+                    let filename = entry.path().to_str().unwrap().to_string().replace((migration_dir_path.to_owned() + "/").as_str(), "");
+                    let pattern = r"^[0-9]+[a-zA-Z_]{0,}\.surql$";
+                    let regex = Regex::new(&pattern).unwrap();
+                    println!("{:?}", filename);
+                    if regex.is_match(&filename) {
                         entries.push(filename);
                     }
                 },
@@ -82,25 +82,17 @@ async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> 
             println!("[V] File already migrated: {}", entry);
         } else {
             let mut migration_content: String = String::new();
-            let result = File::open(&entry).await.unwrap().read_to_string(&mut migration_content).await;
+            let result = File::open(migration_dir_path.to_owned() + "/" + &entry).await.unwrap().read_to_string(&mut migration_content).await;
             if let Err(err) = result {
                 println!("An error occured while opening the migration file {}, ERROR: {}", entry, err);
             }
 
             let _ = db.query(migration_content).await?;
-            // if let Err(err) = result {
-            //     println!("An error occured while migrating {}, ERROR: {}", entry, err);
-            // }
-
             let _ = db
                 .query("CREATE migrations SET filename=$filename;")
                 .bind(("filename", &entry))
                 .await?
                 .check()?;
-
-            // if let Err(err) = result {
-            //     println!("An error occured while creating migration in database for {}, ERROR: {}", entry, err);
-            // }
 
             println!("[V] File successfuly migrated: {}", &entry);
         }
@@ -117,7 +109,7 @@ mod tests {
     use tokio::{fs::File, io::AsyncWriteExt};
 
     #[tokio::test]
-    async fn it_migrates_migrations_files() {
+    async fn it_migrates_migration_files() {
         // Setup database.
         let db = Surreal::new::<Ws>("0.0.0.0:8000").await.unwrap();
 
@@ -129,12 +121,12 @@ mod tests {
 
         // 1. When migration files fit the required pattern, it should process them.
         // Arrange - Create fake migration files.
-        let migration_dir_path = "migrations";
+        let migration_dir_path = "test/migrations";
 
         let _ = create_dir_all(migration_dir_path).expect("Failed to create directory for migration files.");
         let mut file1 = File::create(migration_dir_path.to_owned() + "/001_create_user_table.surql").await.unwrap();
         file1.write_all(b"
-            DEFINE TABLE user SCHEMAFULL;
+            DEFINE TABLE users SCHEMAFULL;
             DEFINE FIELD name ON TABLE user TYPE string;
             DEFINE FIELD email ON TABLE users TYPE string;
             DEFINE FIELD created_at ON TABLE users TYPE datetime VALUE time::now();
@@ -142,25 +134,33 @@ mod tests {
 
         let mut file2 = File::create(migration_dir_path.to_owned() + "/002_create_post_table.surql").await.unwrap();
         file2.write_all(b"
-            DEFINE TABLE post SCHEMAFULL;
-            DEFINE FIELD title ON TABLE user TYPE string;
-            DEFINE FIELD content ON TABLE users TYPE string;
-            DEFINE FIELD created_at ON TABLE users TYPE datetime VALUE time::now();
+            DEFINE TABLE posts SCHEMAFULL;
+            DEFINE FIELD title ON TABLE posts TYPE string;
+            DEFINE FIELD content ON TABLE posts TYPE string;
+            DEFINE FIELD created_at ON TABLE posts TYPE datetime VALUE time::now();
         ").await.unwrap();
 
         let mut file3 = File::create(migration_dir_path.to_owned() + "/003_create_comment_table.surql").await.unwrap();
         file3.write_all(b"
-            DEFINE TABLE comment SCHEMAFULL;
-            DEFINE FIELD content ON TABLE users TYPE string;
-            DEFINE FIELD created_at ON TABLE users TYPE datetime VALUE time::now();
+            DEFINE TABLE comments SCHEMAFULL;
+            DEFINE FIELD content ON TABLE comments TYPE string;
+            DEFINE FIELD created_at ON TABLE comments TYPE datetime VALUE time::now();
         ").await.unwrap();
 
         // Act - Run the migration.
         super::migrate(&db, migration_dir_path).await;
 
+        // 2. When migration files are already processed, it should skip them.
+        // Act - Run the migration again.
+        super::migrate(&db, migration_dir_path).await; 
+
         // CLEANUP
         tokio::fs::remove_dir_all(migration_dir_path)
             .await
             .expect("Failed to remove directory for migration files.");
+        db.query("REMOVE TABLE migrations;").await.unwrap();
+        db.query("REMOVE TABLE users;").await.unwrap();
+        db.query("REMOVE TABLE posts;").await.unwrap();
+        db.query("REMOVE TABLE comments;").await.unwrap();
     }
 }
