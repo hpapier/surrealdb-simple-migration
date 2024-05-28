@@ -1,0 +1,4 @@
+[] Forbid the update/removal of the migration files already migrated.
+[] Update 'created_at' field in Migration structure from String to Datetime (Chrono, ..).
+[] Implement CLI using the library: first command - apply migrations.
+[] Add RESET command to CLI.
