@@ -1,3 +1,7 @@
+extern crate chrono;
+
+use chrono::prelude::*;
+
 use regex::Regex;
 use serde::Deserialize;
 
@@ -7,8 +11,9 @@ use tokio::{fs::{read_dir, File}, io::AsyncReadExt};
 #[derive(Deserialize, PartialEq, Debug)]
 pub struct Migration {
     filename: String,
-    created_at: String,
+    created_at: DateTime<Utc>,
 }
+
 
 impl PartialEq<String> for Migration {
     fn eq(&self, other: &String) -> bool {
@@ -38,11 +43,13 @@ async fn setup_migration_table(db: &Surreal<Client>) -> Result<(), surrealdb::Er
 
 async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> Result<(), surrealdb::Error> {
     // Get the files already processed.
-    let migrations = db
-        .query("SELECT * FROM migrations;")
+    let mut migrations = db
+        .query("SELECT * FROM migrations ORDER BY created_at ASC;")
         .await?
         .check()?
         .take::<Vec<Migration>>(0)?;
+
+    println!("Migrated files: {:#?}", migrations);
 
     // Get the surql migration files to execute.
     let mut dir = read_dir(migration_dir_path).await.unwrap();
