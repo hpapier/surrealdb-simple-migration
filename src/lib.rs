@@ -14,6 +14,7 @@ pub struct Migration {
     created_at: DateTime<Utc>,
 }
 
+// TODO: Implement Error trait for this error type: https://rust-lang.github.io/api-guidelines/interoperability.html#c-good-err
 #[derive(Debug)]
 pub enum Error {
     IO(std::io::Error),
