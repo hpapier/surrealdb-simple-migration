@@ -5,3 +5,4 @@
 [] Return a report about what have been done during the migration process (e.g: count of migrations, ..)
 [] Implement CLI using the library: first command - apply migrations.
 [] Add RESET command to CLI.
+[] Improve the readme.
