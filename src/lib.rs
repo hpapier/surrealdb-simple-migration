@@ -64,7 +64,7 @@ async fn setup_migration_table(db: &Surreal<Client>) -> Result<(), surrealdb::Er
 
 async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> Result<(), Error> {
     // Get the files already processed.
-    let mut migrations = db
+    let migrations = db
         .query("SELECT * FROM migrations ORDER BY created_at ASC;")
         .await?
         .check()?
