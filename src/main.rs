@@ -1,6 +1,6 @@
 use std::env;
 
-use surrealdb::{engine::remote::ws::Ws, options, Surreal};
+use surrealdb::{engine::remote::ws::Ws, Surreal};
 use surrealdb_simple_migration::migrate;
 
 use clap::{Parser, Subcommand};
@@ -15,13 +15,21 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// The host of the SurrealDB instance.
+    /// The host of the SurrealDB instance. (default: "http://localhost:8000")
     #[arg(short = 'H', long, global = true)]
     host: Option<String>,
 
-    /// The path for the migration files.
+    /// The path for the migration files. (default: "./")
     #[arg(short, long, global = true)]
     path: Option<String>,
+
+    /// The namespace used on the surrealdb instance. (default: "default")
+    #[arg(short, long, global = true)]
+    namespace: Option<String>,
+
+    /// The database used on the surrealdb instance. (default: "dev")
+    #[arg(short, long, global = true)]
+    database: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -42,21 +50,32 @@ async fn main() {
     let host = args
         .host
         .unwrap_or_else(
-            || env::var("SURREALDB_MIGRATION_HOST")
+            || env::var("SSM_HOST")
                 .unwrap_or_else(|_| "http://localhost:8000".to_string())
         );
 
     let path = args
         .path
         .unwrap_or_else(
-            || env::var("SURREALDB_MIGRATION_DIRECTORY")
+            || env::var("SSM_PATH")
                 .unwrap_or_else(|_| "./".to_string())
         );
 
-    let db = Surreal::new::<Ws>(host).await.unwrap();
+    let namespace = args
+        .namespace
+        .unwrap_or_else(
+            || env::var("SSM_NAMESPACE")
+                .unwrap_or_else(|_| "default".to_string())
+        );
 
-    let namespace = env::var("SURREALDB_NAMESPACE").unwrap_or_else(|_| "env".to_string());
-    let database = env::var("SURREALDB_DATABASE").unwrap_or_else(|_| "dev".to_string());
+    let database = args
+        .database
+        .unwrap_or_else(
+            || env::var("SSM_DATABASE")
+                .unwrap_or_else(|_| "dev".to_string())
+        );
+
+    let db = Surreal::new::<Ws>(host).await.unwrap();
     
     db
         .use_ns(&namespace)
