@@ -6,14 +6,14 @@ A simple library for surrealdb migration process.
 
 1. This library migrates files under the pattern `<file_number>(_<filename>).surql`.
 Here some examples:
-```
+```shell
     path_to_dir/001.surql
     path_to_dir/002_create_users_table.surql
     path_to_dir/003_drop.surql
 ```
 
 2. In code:
-```
+```rust
     let db_connection = ...;
     let migration_directory_path = "your/custom/path";
 
