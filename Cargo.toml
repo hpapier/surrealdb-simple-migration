@@ -1,7 +1,14 @@
 [package]
-name = "surrealdb-simple-migration"
-version = "0.1.0"
+categories = ["database"]
+description = "Simple yet powerful database migration tool for SurrealDB"
 edition = "2021"
+homepage = "https://github.com/hpapier/surrealdb-simple-migration.git"
+keywords = ["surrealdb", "migration", "database"]
+license = "MIT OR Apache-2.0"
+name = "surrealdb-simple-migration"
+repository = "https://github.com/hpapier/surrealdb-simple-migration.git"
+readme = "README.md"
+version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
