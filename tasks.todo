@@ -1,9 +1,11 @@
 [V] Update 'created_at' field in Migration structure from String to Datetime (Chrono, ..).
 [V] Forbid the update/removal of the migration files already migrated.
+[V] Improve the readme.
+[V] Implement CLI using the library: first command - apply migrations.
+[V] Add RESET command to CLI.
+[V] Implement std::Error and fmt::Display for the custom Error returned by the lib.
 [] Add logging.
 [] Add tracing.
 [] Return a report about what have been done during the migration process (e.g: count of migrations, ..)
-[] Implement CLI using the library: first command - apply migrations.
-[] Add RESET command to CLI.
-[] Improve the readme.
+[] Make the Readme more colorful and readable.
 [] Implement Rust API guidelines (https://rust-lang.github.io/api-guidelines/checklist.html).

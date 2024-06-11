@@ -1,5 +1,6 @@
 extern crate chrono;
 
+use std::fmt;
 use chrono::prelude::*;
 
 use regex::Regex;
@@ -14,7 +15,6 @@ pub struct Migration {
     created_at: DateTime<Utc>,
 }
 
-// TODO: Implement Error trait for this error type: https://rust-lang.github.io/api-guidelines/interoperability.html#c-good-err
 #[derive(Debug)]
 pub enum Error {
     IO(std::io::Error),
@@ -39,6 +39,29 @@ impl PartialEq<String> for Migration {
     fn eq(&self, other: &String) -> bool {
         self.filename.to_string() == *other
     }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Error::IO(ref err) => write!(f, "IO error: {}", err),
+            Error::Surreal(ref err) => write!(f, "Surreal error: {}", err),
+            Error::ForbiddenUpdate(ref err) => write!(f, "Forbidden update: {}", err),
+            Error::ForbiddenRemoval(ref err) => write!(f, "Forbidden removal: {}", err),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match *self {
+            Error::IO(ref err) => Some(err),
+            Error::Surreal(ref err) => Some(err),
+            Error::ForbiddenUpdate(_) => None,
+            Error::ForbiddenRemoval(_) => None,
+        }
+    }
+
 }
 
 pub async fn migrate(db: &Surreal<Client>, migration_dir_path: &str) -> Result<(), Error> {
@@ -184,7 +207,7 @@ mod tests {
 
         db
             .use_ns("env")
-            .use_db("dev")
+            .use_db("test")
             .await
             .expect("Failed to use namespace 'env' with database 'dev'.");
 
