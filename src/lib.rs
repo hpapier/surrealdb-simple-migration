@@ -104,7 +104,7 @@ async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> 
     // Filter the files that fit the migration pattern.
     while let Some(dir_entry) = dir.next_entry().await? {
         let filename = dir_entry.path().to_str().unwrap().to_string().replace((migration_dir_path.to_owned() + "/").as_str(), "");
-        let pattern = r"^[0-9]+[a-zA-Z_]{0,}\.surql$";
+        let pattern = r"^[0-9]+[a-zA-Z_0-9]{0,}\.surql$";
         let regex = Regex::new(&pattern).expect("Failed to build the regexp");
         if regex.is_match(&filename) {
             entries.push(filename);
@@ -200,8 +200,24 @@ mod tests {
     use surrealdb::{engine::remote::ws::Ws, Surreal};
     use tokio::{fs::File, io::AsyncWriteExt};
 
+    async fn clean_up() {
+        let db = Surreal::new::<Ws>("0.0.0.0:8000").await.unwrap();
+
+        db
+            .use_ns("env")
+            .use_db("test")
+            .await
+            .expect("Failed to use namespace 'env' with database 'dev'.");
+
+        let _ = tokio::fs::remove_dir_all("test/migrations").await;
+        let _ = db.query("DELETE migrations;").await.expect("Failed to delete migrations table.");
+    }
+
     #[tokio::test]
     async fn it_migrates_migration_files() {
+        // Cleanup
+        clean_up().await;
+
         // Setup database.
         let db = Surreal::new::<Ws>("0.0.0.0:8000").await.unwrap();
 
@@ -239,6 +255,13 @@ mod tests {
             DEFINE FIELD created_at ON TABLE comments TYPE datetime VALUE time::now();
         ").await.unwrap();
 
+        let mut file4 = File::create(migration_dir_path.to_owned() + "/004_i18n_table.surql").await.unwrap();
+        file4.write_all(b"
+            DEFINE TABLE i18n SCHEMAFULL;
+            DEFINE FIELD locale ON TABLE i18n TYPE string;
+            DEFINE FIELD text ON TABLE i18n TYPE string;
+        ").await.unwrap();
+
         // Act - Run the migration.
         let result = super::migrate(&db, migration_dir_path).await;
 
@@ -254,8 +277,8 @@ mod tests {
 
         // 3. When new migration files are added, it should process them.
         // Arrange - Add a new migration file.
-        let mut file4 = File::create(migration_dir_path.to_owned() + "/004_create_likes_table.surql").await.unwrap();
-        file4.write_all(b"
+        let mut file5 = File::create(migration_dir_path.to_owned() + "/005_create_likes_table.surql").await.unwrap();
+        file5.write_all(b"
             DEFINE TABLE likes SCHEMAFULL;
             DEFINE FIELD user_id ON TABLE likes TYPE record;
             DEFINE FIELD post_id ON TABLE likes TYPE string;
@@ -293,10 +316,9 @@ mod tests {
         assert!(res.is_err());
 
         // CLEANUP
-        tokio::fs::remove_dir_all(migration_dir_path)
-            .await
-            .expect("Failed to remove directory for migration files.");
-        db.query("DELETE migrations;").await.unwrap();
+        clean_up().await;
+
+        // data cleaning
         db.query("REMOVE TABLE migrations;").await.unwrap();
         db.query("REMOVE TABLE users;").await.unwrap();
         db.query("REMOVE TABLE posts;").await.unwrap();
