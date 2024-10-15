@@ -154,11 +154,11 @@ async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> 
 
             // When the last migration file is created after the current file, it should fail.
             if last_migration != None && last_migration.unwrap().created_at > DateTime::<Utc>::from(File::metadata(&file).await?.modified()?) {
-                println!("[X] The migration file '{}' appears before the last migration file '{}'.", entry, last_migration.unwrap().filename);
+                println!("[X] The migration file '{}' appears before the last migration file '{}'.", &entry, last_migration.unwrap().filename);
 
                 return Err(
                     Error::ForbiddenUpdate(
-                        format!("The migration file '{}' appears before the last migration file '{}'.", entry, last_migration.unwrap().filename)
+                        format!("The migration file '{}' appears before the last migration file '{}'.", &entry, last_migration.unwrap().filename)
                     )
                 );
             }
@@ -167,7 +167,7 @@ async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> 
             let _ = db.query(migration_content).await?;
             let _ = db
                 .query("CREATE migrations SET filename=$filename;")
-                .bind(("filename", &entry))
+                .bind(("filename", entry.clone()))
                 .await?
                 .check()?;
 
