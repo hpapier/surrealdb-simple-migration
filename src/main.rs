@@ -30,6 +30,14 @@ struct Cli {
     /// The database used on the surrealdb instance. (default: "dev")
     #[arg(short, long, global = true)]
     database: Option<String>,
+
+    /// The username for the user used on the surrealdb instance.
+    #[arg(short = 'U', long, global = true)]
+    username: Option<String>,
+
+    /// The password for the user used on the surrealdb instance.
+    #[arg(short = 'P', long, global = true)]
+    password: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -51,7 +59,7 @@ async fn main() {
         .host
         .unwrap_or_else(
             || env::var("SSM_HOST")
-                .unwrap_or_else(|_| "http://localhost:8000".to_string())
+                .unwrap_or_else(|_| "0.0.0.0:8000".to_string())
         );
 
     let path = args
@@ -75,7 +83,26 @@ async fn main() {
                 .unwrap_or_else(|_| "dev".to_string())
         );
 
+    println!("Using:\n Host: {}\n Path: {} \n Namespace: {} \n Database: {}", host, path, namespace, database);
+
+    let username = args
+        .username
+        .unwrap_or_else(|| env::var("SSM_USERNAME")
+            .expect("You must provide a username (using -U or --user or SSM_USERNAME env var) in order to modify the database.")
+        );
+
+    let password = args
+        .password
+        .unwrap_or_else(|| env::var("SSM_PASSWORD")
+            .expect("You must provide a password (using -P or --password or SSM_PASSWORD env var) in order to modify the database.")
+        );
+
     let db = Surreal::new::<Ws>(host).await.unwrap();
+
+    db.signin(surrealdb::opt::auth::Root {
+        username: &username,
+        password: &password,
+    }).await.expect("Failed to sign in.");
     
     db
         .use_ns(&namespace)
