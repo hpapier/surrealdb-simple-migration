@@ -37,3 +37,5 @@ You can config the CLI to use either your environment variables or pass the desi
 - `SSM_PATH` OR `-p your/migration/files/path/` in the CLI : Setup the path used to run the migrations against (default to `./`).
 - `SSM_NAMESPACE` OR `-n the_database_namespace` in the CLI : Setup the namespace used to run the migrations against (default to `default`).
 - `SSM_DB_NAME` OR `-n the_database_namespace` in the CLI : Setup the database used to run the migrations against (default to `dev`).
+- `SSM_USERNAME` OR `-U | --username <username>` in the CLI : Setup the user username to authenticate with.
+- `SSM_PASSWORD` OR `-P | --password <password>` in the CLI : Setup the user password to authenticate with.
