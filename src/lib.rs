@@ -73,9 +73,9 @@ pub async fn migrate(db: &Surreal<Client>, migration_dir_path: &str) -> Result<(
 
 async fn setup_migration_table(db: &Surreal<Client>) -> Result<(), surrealdb::Error> {
     let sql = r#"
-        DEFINE TABLE migrations SCHEMAFULL;
-        DEFINE FIELD filename ON TABLE migrations TYPE string;
-        DEFINE FIELD created_at ON TABLE migrations TYPE datetime VALUE time::now();
+        DEFINE TABLE IF NOT EXISTS migrations SCHEMAFULL;
+        DEFINE FIELD IF NOT EXISTS filename ON TABLE migrations TYPE string;
+        DEFINE FIELD IF NOT EXISTS created_at ON TABLE migrations TYPE datetime VALUE time::now();
     "#;
 
     let _ = db
@@ -197,15 +197,22 @@ async fn run_migration_files(db: &Surreal<Client>, migration_dir_path: &str) -> 
 mod tests {
     use std::fs::create_dir_all;
 
-    use surrealdb::{engine::remote::ws::Ws, Surreal};
+    use surrealdb::{engine::remote::ws::Ws, opt::auth::Root, Surreal};
     use tokio::{fs::File, io::AsyncWriteExt};
 
     async fn clean_up() {
         let db = Surreal::new::<Ws>("0.0.0.0:8000").await.unwrap();
 
+        db.signin(Root {
+            username: "root",
+            password: "root"
+        })
+        .await
+        .expect("Failed to sign in.");
+
         db
             .use_ns("env")
-            .use_db("test")
+            .use_db("ssm_test")
             .await
             .expect("Failed to use namespace 'env' with database 'dev'.");
 
@@ -221,9 +228,16 @@ mod tests {
         // Setup database.
         let db = Surreal::new::<Ws>("0.0.0.0:8000").await.unwrap();
 
+        db.signin(Root {
+            username: "root",
+            password: "root"
+        })
+        .await
+        .expect("Failed to sign in.");
+
         db
             .use_ns("env")
-            .use_db("test")
+            .use_db("ssm_test")
             .await
             .expect("Failed to use namespace 'env' with database 'dev'.");
 
