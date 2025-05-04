@@ -1,6 +1,6 @@
 use std::env;
 
-use surrealdb::{engine::remote::ws::Ws, Surreal};
+use surrealdb::engine::any;
 use surrealdb_simple_migration::migrate;
 
 use clap::{Parser, Subcommand};
@@ -57,33 +57,24 @@ async fn main() {
 
     let host = args
         .host
-        .unwrap_or_else(
-            || env::var("SSM_HOST")
-                .unwrap_or_else(|_| "0.0.0.0:8000".to_string())
-        );
+        .unwrap_or_else(|| env::var("SSM_HOST").unwrap_or_else(|_| "0.0.0.0:8000".to_string()));
 
     let path = args
         .path
-        .unwrap_or_else(
-            || env::var("SSM_PATH")
-                .unwrap_or_else(|_| "./".to_string())
-        );
+        .unwrap_or_else(|| env::var("SSM_PATH").unwrap_or_else(|_| "./".to_string()));
 
     let namespace = args
         .namespace
-        .unwrap_or_else(
-            || env::var("SSM_NAMESPACE")
-                .unwrap_or_else(|_| "default".to_string())
-        );
+        .unwrap_or_else(|| env::var("SSM_NAMESPACE").unwrap_or_else(|_| "default".to_string()));
 
     let database = args
         .database
-        .unwrap_or_else(
-            || env::var("SSM_DATABASE")
-                .unwrap_or_else(|_| "dev".to_string())
-        );
+        .unwrap_or_else(|| env::var("SSM_DATABASE").unwrap_or_else(|_| "dev".to_string()));
 
-    println!("Using:\n Host: {}\n Path: {} \n Namespace: {} \n Database: {}", host, path, namespace, database);
+    println!(
+        "Using:\n Host: {}\n Path: {} \n Namespace: {} \n Database: {}",
+        host, path, namespace, database
+    );
 
     let username = args
         .username
@@ -97,19 +88,23 @@ async fn main() {
             .expect("You must provide a password (using -P or --password or SSM_PASSWORD env var) in order to modify the database.")
         );
 
-    let db = Surreal::new::<Ws>(host).await.unwrap();
+    let db = any::connect(host).await.unwrap();
 
     db.signin(surrealdb::opt::auth::Root {
         username: &username,
         password: &password,
-    }).await.expect("Failed to sign in.");
-    
-    db
-        .use_ns(&namespace)
-        .use_db(&database)
-        .await
-        .expect(format!("Failed to use namespace {} with database {}.", namespace, database).as_str());
-    
+    })
+    .await
+    .expect("Failed to sign in.");
+
+    db.use_ns(&namespace).use_db(&database).await.expect(
+        format!(
+            "Failed to use namespace {} with database {}.",
+            namespace, database
+        )
+        .as_str(),
+    );
+
     match args.command {
         Commands::Apply => {
             let result = migrate(&db, path.as_str()).await;
@@ -117,11 +112,9 @@ async fn main() {
                 Ok(_) => (),
                 Err(e) => eprintln!("Failed to apply migrations: {:?}", e),
             }
-        },
+        }
         Commands::Reset => {
-            let result = db
-                .query("DELETE FROM migrations")
-                .await;
+            let result = db.query("DELETE FROM migrations").await;
 
             if let Err(e) = result {
                 return eprintln!("Failed to reset migrations table: {:?}", e);
