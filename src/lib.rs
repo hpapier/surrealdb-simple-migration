@@ -4,15 +4,16 @@ use chrono::prelude::*;
 use std::fmt;
 
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use surrealdb::{engine::any::Any, Surreal};
+use surrealdb_types::SurrealValue;
 use tokio::{
     fs::{read_dir, File},
     io::AsyncReadExt,
 };
 
-#[derive(Deserialize, PartialEq, Debug, Clone)]
+#[derive(SurrealValue, Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Migration {
     filename: String,
     created_at: DateTime<Utc>,
@@ -215,8 +216,8 @@ mod tests {
         let db = any::connect("ws://0.0.0.0:8000").await.unwrap();
 
         db.signin(Root {
-            username: "root",
-            password: "root",
+            username: "root".to_string(),
+            password: "root".to_string(),
         })
         .await
         .expect("Failed to sign in.");
@@ -244,8 +245,8 @@ mod tests {
             .expect("Failed to connect to the database.");
 
         db.signin(Root {
-            username: "root",
-            password: "root",
+            username: "root".to_string(),
+            password: "root".to_string(),
         })
         .await
         .expect("Failed to sign in.");

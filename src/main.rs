@@ -91,8 +91,8 @@ async fn main() {
     let db = any::connect(host).await.unwrap();
 
     db.signin(surrealdb::opt::auth::Root {
-        username: &username,
-        password: &password,
+        username: username,
+        password: password,
     })
     .await
     .expect("Failed to sign in.");
